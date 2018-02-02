@@ -1,0 +1,118 @@
+---
+title: "Collegi elettorali 2018"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    # social: [ "twitter", "facebook", "menu" ]
+    # source_code: 'https://github.com/jobonaf/dashboard-collegi'
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(dplyr)
+library(knitr)
+library(bubbles)
+library(RColorBrewer)
+load("data/dati_collegi_elettorali_2017.rda")
+```
+
+Sidebar {.sidebar}
+=======================================================================
+
+```{r}
+selectInput("comune", "scegli il Comune", choices = unique(ced$Comune), selected = sample(ced$Comune,1))
+selectInput("tipo", "scegli il collegio elettorale", 
+            choices = c("CameraUninominale","CameraProporzionale","SenatoUninominale","SenatoProporzionale"), 
+            selected = "CameraUninominale")
+```
+
+dati: [ISTAT](https://www.istat.it/it/archivio/208278)
+
+codice: [jobonaf/dashboard-collegi](https://github.com/jobonaf/dashboard-collegi)
+
+Dashboard
+=======================================================================
+
+Row
+-----------------------------------------------------------------------
+
+```{r}
+df <- reactive({
+  ced %>% filter(Comune==input$comune) %>% select_(input$tipo) %>% as.data.frame()-> cu
+  ced %>% rename_(Collegio=input$tipo) %>%
+    filter(Collegio%in%cu[,1]) %>%
+    select(Comune,Collegio,Popolazione) %>%
+    group_by(Comune,Collegio) %>%
+    summarise(Popolazione=sum(Popolazione)) %>%
+    ungroup() %>%
+    as.data.frame()
+})  
+```
+
+###  {.value-box}
+
+```{r}
+renderValueBox({
+  df() %>% filter(Comune==input$comune) -> pop
+  valueBox(sum(pop$Popolazione),
+           caption=paste("popolazione",input$comune),
+           icon = "fa-users", color="info")
+})
+```
+
+###  {.value-box}
+
+```{r}
+renderValueBox({
+  nc <- nrow(df() %>% select(Collegio) %>% distinct())
+  valueBox(nc,
+           caption=c("collegio","collegi")[(nc>1)+1],
+           icon = "fa-map-marker", color="success")
+})
+```
+
+###  {.value-box}
+
+```{r}
+renderValueBox({
+  nc <- nrow(df() %>% select(Comune) %>% distinct())
+  valueBox(nc,
+           caption=c("Comune","Comuni")[(nc>1)+1],
+           icon = "fa-university", color="danger")
+})
+```
+
+###  {.value-box}
+
+```{r}
+renderValueBox({
+  valueBox(sum(df()$Popolazione),
+           caption="popolazione totale",
+           icon = "fa-users", color="primary")
+})
+```
+
+Row
+-----------------------------------------------------------------------
+
+### {data-width=740}
+
+```{r}
+renderBubbles({
+  bubbles(sqrt(df()$Popolazione), df()$Comune, 
+          color = brewer.pal(n=length(unique(df()$Collegio)), "Set3")[factor(df()$Collegio)])
+})
+```
+
+### {data-width=300}
+
+```{r}
+renderTable({
+  df() %>%
+    select(Comune,Collegio,Popolazione) %>%
+    as.data.frame()
+}, digits = 0)
+```
+
+
