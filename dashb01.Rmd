@@ -17,7 +17,8 @@ library(RColorBrewer)
 load("data/dati_collegi_elettorali_2017.rda")
 ```
 
-Sidebar {.sidebar}
+
+Input {.sidebar}
 =======================================================================
 
 ```{r}
@@ -27,14 +28,23 @@ selectInput("tipo", "scegli il collegio elettorale",
             selected = "CameraUninominale")
 ```
 
+ 
+```{r}
+p("per le grandi città, ti può essere utile ",
+actionLink("viewnext", label = "cliccare qui, per vedere le statistiche di un altro collegio"))
+```
+
+
 dati: [ISTAT](https://www.istat.it/it/archivio/208278)
 
 codice: [jobonaf/dashboard-collegi](https://github.com/jobonaf/dashboard-collegi)
 
-Dashboard
+
+Comuni
 =======================================================================
 
-Row
+
+Column  {data-width=300}
 -----------------------------------------------------------------------
 
 ```{r}
@@ -93,7 +103,7 @@ renderValueBox({
 })
 ```
 
-Row
+Column
 -----------------------------------------------------------------------
 
 ### {data-width=740}
@@ -116,3 +126,101 @@ renderTable({
 ```
 
 
+
+
+
+Collegio
+=======================================================================
+
+
+Row
+-----------------------------------------------------------------------
+
+```{r}
+sameColl <- reactive({
+  ced %>% filter(Comune==input$comune) %>% select_(input$tipo) %>% as.data.frame()-> cu
+  ced %>% rename_(Collegio=input$tipo) %>%
+    mutate(sameCollege=Collegio%in%cu[,1]) %>%
+    group_by(Collegio,sameCollege,Regione) %>%
+    summarise(Popolazione=sum(Popolazione)) %>%
+    ungroup() %>%
+    as.data.frame()
+})  
+myColl <- reactive({
+  sameColl() %>% filter(sameCollege) -> tmp
+  tmp[(input$viewnext)%%nrow(tmp)+1,]
+})  
+statColl <- reactive({
+  sameColl() %>%
+    select(-sameCollege) %>%
+    mutate(PopAve=mean(Popolazione),
+           Delta=(Popolazione-PopAve)/PopAve*100) %>%
+    arrange(Delta) %>%
+    mutate(CumulPop=cumsum(Popolazione)) %>%
+    group_by(Regione) %>%
+    arrange(Delta) %>%
+    mutate(CumulPopReg=cumsum(Popolazione))
+})
+```
+
+###
+
+```{r}
+renderUI({
+  h2(myColl()$Collegio)
+})
+
+```
+
+###  {.value-box}
+
+```{r}
+renderGauge({
+  p70 <- quantile(sameColl()$Popolazione,0.70)
+  p85 <- quantile(sameColl()$Popolazione,0.85)
+  Max <- max(sameColl()$Popolazione)
+  gauge(value = myColl()$Popolazione, 
+        min = min(sameColl()$Popolazione), 
+        max = Max, abbreviate = F,
+        sectors=gaugeSectors(warning=c(p70,p85), 
+                             danger=c(p85,Max)),
+        label = paste("popolazione"))
+})
+```
+
+###  {.value-box}
+
+```{r}
+renderValueBox({
+  ave <- mean(sameColl()$Popolazione)
+  delta <- round((myColl()$Popolazione-ave)/ave*100)
+  Delta <- sprintf(delta,fmt="%+i%%")
+  valueBox(Delta,
+           caption=paste("rispetto alla media naz."),
+           icon = "fa-users", 
+           color=c("success","warning","danger")[cut(abs(delta),breaks = c(0,7,15,Inf))])
+})
+```
+
+Row
+-----------------------------------------------------------------------
+
+```{r}
+library(ggplot2)
+library(scales)
+library(ggrepel)
+renderPlot({
+  ggplot(statColl() %>%
+           mutate(isMe=myColl()$Collegio==Collegio,
+                  label=ifelse(isMe,as.character(Collegio),"")), 
+         aes(x=Regione, y=Delta, label=label, group=Regione, fill=Regione)) +
+    geom_boxplot(colour="lightgrey", alpha=0.3) +
+    coord_flip() +
+    geom_point(show.legend = F, size=1.6) +
+    geom_hline(yintercept = 0, linetype="dashed", color="grey") + 
+    theme_bw() +
+    ylab("scarto rispetto alla media naz. (%)") +
+    geom_label_repel(fill="transparent") +
+    scale_fill_discrete(guide=F)
+}, height = 600)
+```
